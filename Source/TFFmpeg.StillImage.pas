@@ -15,12 +15,10 @@ type
   TFFmpegStillImage = class sealed
   public
     // Literal local BMP/PNG/JPEG only, exactly one decoded frame. Caller owns AFrame.
-    class function DecodeFile(const AFilename: string; const AInterrupt: TAVIOInterruptCB;
-      out AFrame: PAVFrame): Integer; static;
+    class function DecodeFile(const AFilename: String; const AInterrupt: TAVIOInterruptCB; out AFrame: PAVFrame): Integer; static;
     // Caller owns returned bytes. Source is borrowed. Alpha is composited onto
     // ABackgroundRGB before encoding an opaque, uncompressed 24-bit BMP.
-    class function EncodeBMP(ASource: PAVFrame; AWidth, AHeight: Integer; out ABytes: TBytes;
-      ABackgroundRGB: Cardinal = 0): Integer; static;
+    class function EncodeBMP(ASource: PAVFrame; AWidth, AHeight: Integer; out ABytes: TBytes; ABackgroundRGB: Cardinal = 0): Integer; static;
   end;
 
 implementation
@@ -37,8 +35,7 @@ uses
   TFFmpeg.Input,
   TFFmpeg.Decoder;
 
-class function TFFmpegStillImage.DecodeFile(const AFilename: string; const AInterrupt: TAVIOInterruptCB;
-  out AFrame: PAVFrame): Integer;
+class function TFFmpegStillImage.DecodeFile(const AFilename: String; const AInterrupt: TAVIOInterruptCB; out AFrame: PAVFrame): Integer;
 var
   Input: TFFmpegInput;
   Decoder: TFFmpegDecoder;
@@ -56,10 +53,11 @@ var
         Exit;
       if Code < 0 then
         Exit(Code);
+
       Inc(FrameCount);
-      if (FrameCount > 1) OR (Frame.width <= 0) OR (Frame.height <= 0) OR
-        (Int64(Frame.width) * Frame.height > 67108864) then
+      if (FrameCount > 1) OR (Frame.width <= 0) OR (Frame.height <= 0) OR (Int64(Frame.width) * Frame.height > 67108864) then
         Exit(AVERROR_EINVAL);
+
       Saved:=av_frame_clone(Frame);
       if NOT Assigned(Saved) then
         Exit(AVERROR_ENOMEM);
@@ -70,6 +68,7 @@ var
 begin
   AFrame:=nil;
   Result:=AVERROR_EINVAL;
+
   Input:=TFFmpegInput.Create;
   Decoder:=TFFmpegDecoder.Create;
   Packet:=nil;
@@ -77,46 +76,66 @@ begin
   Saved:=nil;
   Options:=nil;
   FrameCount:=0;
+
   try
     Result:=av_dict_set(@Options, 'format_whitelist', 'bmp_pipe,png_pipe,jpeg_pipe', 0);
-    if Result < 0 then Exit;
+    if Result < 0 then
+      Exit;
+
     Result:=Input.OpenFile(AFilename, Options, AInterrupt, AVMEDIA_TYPE_VIDEO);
-    if Result < 0 then Exit;
+    if Result < 0 then
+      Exit;
+
     if NOT (Input.CodecParameters.codec_id IN [AV_CODEC_ID_BMP, AV_CODEC_ID_PNG, AV_CODEC_ID_MJPEG]) then
       Exit(AVERROR_EINVAL);
     if (Input.CodecParameters.width <= 0) OR (Input.CodecParameters.height <= 0) OR
       (Int64(Input.CodecParameters.width) * Input.CodecParameters.height > 67108864) then
       Exit(AVERROR_EINVAL);
+
     Result:=Decoder.Open(Input.Codec, Input.CodecParameters);
-    if Result < 0 then Exit;
+    if Result < 0 then
+      Exit;
     Decoder.CodecContext.max_pixels:=67108864;
+
     Packet:=av_packet_alloc;
     Frame:=av_frame_alloc;
     if NOT Assigned(Packet) OR NOT Assigned(Frame) then
       Exit(AVERROR_ENOMEM);
+
     repeat
       Code:=Input.ReadPacket(Packet);
-      if Code = AVERROR_EOF then Break;
-      if Code < 0 then Exit(Code);
+      if Code = AVERROR_EOF then
+        Break;
+      if Code < 0 then
+        Exit(Code);
+
       try
         if Packet.stream_index = Input.StreamIndex then
         begin
           Result:=Decoder.SendPacket(Packet);
-          if Result < 0 then Exit;
+          if Result < 0 then
+            Exit;
           Result:=ReceiveFrames;
-          if Result < 0 then Exit;
+          if Result < 0 then
+            Exit;
         end;
       finally
         av_packet_unref(Packet);
       end;
     until False;
+
     Result:=Decoder.SendPacket(nil);
-    if Result < 0 then Exit;
+    if Result < 0 then
+      Exit;
     Result:=ReceiveFrames;
-    if Result < 0 then Exit;
-    if FrameCount <> 1 then Exit(AVERROR_EINVAL);
+    if Result < 0 then
+      Exit;
+    if FrameCount <> 1 then
+      Exit(AVERROR_EINVAL);
+
     AFrame:=Saved;
     Saved:=nil;
+
     Result:=0;
   finally
     av_dict_free(@Options);
@@ -128,8 +147,7 @@ begin
   end;
 end;
 
-class function TFFmpegStillImage.EncodeBMP(ASource: PAVFrame; AWidth, AHeight: Integer; out ABytes: TBytes;
-  ABackgroundRGB: Cardinal): Integer;
+class function TFFmpegStillImage.EncodeBMP(ASource: PAVFrame; AWidth, AHeight: Integer; out ABytes: TBytes; ABackgroundRGB: Cardinal): Integer;
 var
   Scaled, Opaque: PAVFrame;
   Encoder: TFFmpegEncoder;
@@ -141,18 +159,22 @@ begin
   Result:=AVERROR_EINVAL;
   if ABackgroundRGB > $FFFFFF then
     Exit;
+
   Scaled:=nil;
   Opaque:=nil;
   Packet:=nil;
   Encoder:=nil;
+
   try
     Result:=TFFmpegVideoScaler.Scale(ASource, AWidth, AHeight, AV_PIX_FMT_BGRA, Scaled);
     if Result < 0 then
       Exit;
+
     Opaque:=av_frame_alloc;
     Packet:=av_packet_alloc;
     if NOT Assigned(Opaque) OR NOT Assigned(Packet) then
       Exit(AVERROR_ENOMEM);
+
     Opaque.width:=AWidth;
     Opaque.height:=AHeight;
     Opaque.format:=Ord(AV_PIX_FMT_BGR24);
@@ -160,10 +182,12 @@ begin
     Result:=av_frame_get_buffer(Opaque, 32);
     if Result < 0 then
       Exit;
+
     for Y:=0 to AHeight - 1 do
     begin
       Src:=PByte(NativeUInt(Scaled.data[0]) + NativeUInt(Y * Scaled.linesize[0]));
       Dst:=PByte(NativeUInt(Opaque.data[0]) + NativeUInt(Y * Opaque.linesize[0]));
+
       for X:=0 to AWidth - 1 do
       begin
         Alpha:=PByte(NativeUInt(Src) + 3)^;
@@ -177,28 +201,35 @@ begin
         Inc(Src);
       end;
     end;
+
     Encoder:=TFFmpegEncoder.Create;
     Result:=Encoder.Allocate(AV_CODEC_ID_BMP);
     if Result < 0 then
       Exit;
+
     Encoder.CodecContext.width:=AWidth;
     Encoder.CodecContext.height:=AHeight;
     Encoder.CodecContext.pix_fmt:=AV_PIX_FMT_BGR24;
     Encoder.CodecContext.time_base.num:=1;
     Encoder.CodecContext.time_base.den:=1;
+
     Result:=Encoder.Open;
     if Result < 0 then
       Exit;
+
     Result:=Encoder.SendFrame(Opaque);
     if Result < 0 then
       Exit;
+
     Result:=Encoder.ReceivePacket(Packet);
     if Result < 0 then
       Exit;
     if (Packet.size <= 0) OR NOT Assigned(Packet.data) then
       Exit(AVERROR_EINVAL);
+
     SetLength(ABytes, Packet.size);
     Move(Packet.data^, ABytes[0], Packet.size);
+
     av_packet_unref(Packet);
     Result:=Encoder.SendFrame(nil);
     if Result < 0 then
@@ -206,6 +237,7 @@ begin
       ABytes:=nil;
       Exit;
     end;
+
     Result:=Encoder.ReceivePacket(Packet);
     if Result <> AVERROR_EOF then
     begin
@@ -214,6 +246,7 @@ begin
         Result:=AVERROR_EINVAL;
       Exit;
     end;
+
     Result:=0;
   finally
     Encoder.Free;

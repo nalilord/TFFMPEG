@@ -50,6 +50,10 @@ for dll in avcodec-63 avformat-63 avutil-61 swresample-7 avfilter-12 avdevice-63
     printf 'Missing runtime: %s\n' "$ROOT/Runtime/$PLATFORM/$dll.dll" >&2
     exit 1
   fi
-  cp -p "$ROOT/Runtime/$PLATFORM/$dll.dll" "$OUT_DIR/$dll.dll"
+  # Loaded Windows DLLs deny write access. Do not rewrite an already matching
+  # runtime while another example uses it; changed DLLs still require a stop.
+  if ! cmp -s "$ROOT/Runtime/$PLATFORM/$dll.dll" "$OUT_DIR/$dll.dll"; then
+    cp -p "$ROOT/Runtime/$PLATFORM/$dll.dll" "$OUT_DIR/$dll.dll"
+  fi
 done
 printf 'Built %s for %s in %s\n' "$PROJECT_REL" "$PLATFORM" "$OUT_DIR"

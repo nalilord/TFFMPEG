@@ -1,146 +1,291 @@
 # TFFMPEG
 
-Delphi/Pascal bindings and reusable wrappers for **FFmpeg 9.0.2**. The library
-provides input, decoding, encoding, audio resampling, software video scaling and
-still-image helpers. Use the source units directly in a console, desktop or
-service application.
+**Inspect, decode, convert and record media in Delphi — powered by FFmpeg.**
 
-This repository contains source code only. Install matching FFmpeg shared
-libraries separately; see [runtime setup](Runtime/README.md). The wrapper API does
-not implement a player, output devices, a media graph or a complete transcoder.
+[![FFmpeg](https://img.shields.io/badge/FFmpeg-9.0.2-007808)](Runtime/README.md)
+[![Delphi](https://img.shields.io/badge/Delphi-Win32%20%7C%20Win64-CC0000)](#compatibility)
+[![License](https://img.shields.io/badge/Wrapper_license-BSD--2--Clause-blue)](LICENSE)
 
-## Contents
+TFFMPEG brings FFmpeg to Pascal applications through a high-level media API,
+reusable native wrappers and translated headers. Read files, extract frames,
+write audio/video, convert formats and capture cameras or microphones using
+ordinary Pascal records and interfaces. The media API owns the native packets,
+frames, codecs and processing loops for you.
 
-| Location | Purpose |
+Use the source units directly in console, desktop or service applications.
+No VCL or FMX dependency is required.
+
+[Get started](#get-started) · [Examples](#examples) · [Runtime setup](Runtime/README.md) · [Build and test](#build-and-test)
+
+## What you can build
+
+| Task | Included capabilities |
 | --- | --- |
-| `Headers/` | Pascal declarations for codec, format, utility, filter, device, resampling and scaling APIs |
-| `Source/TFFmpeg.Input.pas` | Owned file/URL input, stream discovery, stream selection and packet reading |
-| `Source/TFFmpeg.Decoder.pas` | Decoder context and send/receive lifecycle |
-| `Source/TFFmpeg.Encoder.pas` | Encoder allocation, configuration, opening and send/receive lifecycle |
-| `Source/TFFmpeg.AudioResampler.pas` | Packed PCM conversion with an owned reusable output buffer |
-| `Source/TFFmpeg.VideoScaler.pas` | Software-frame scaling into independently owned storage |
-| `Source/TFFmpeg.StillImage.pas` | Local BMP/PNG/JPEG decoding and opaque BMP encoding |
-| `Source/TFFmpeg.Api.pas`, `TFFmpeg.Utils.pas`, `TFFmpeg.Resample.pas` | Allocation, error, dictionary, network and resampling helpers |
-| `Examples/` | Standalone audio decoding example |
-| `Tests/` | Audio, encoder, native API and video-scaling smoke tests |
-| `Tools/` | ABI comparison, export audit and a Win32 runtime build recipe |
+| **Inspect media** | Container and stream metadata, codecs, duration, dimensions, channel layouts and decoder availability |
+| **Read audio and video** | File, byte-array and HTTP/HTTPS input; decoded samples, seeking, timestamps and retained buffers |
+| **Extract and transform images** | Screenshots, BMP/PNG/JPEG, fit/fill/stretch, alpha compositing, pixel aspect and supported orientation transforms |
+| **Create media** | Raw audio/video encoding, still-image sequences, H.264 MP4, PCM WAV and Ogg/Opus |
+| **Convert files** | MP3 to Opus, selected-track audio conversion, H.264/Opus Matroska and H.264/AAC MP4 presets |
+| **Capture and record** | Windows DirectShow discovery, mode queries, camera/microphone capture, bounded preview queues and timed or gracefully stopped recording |
 
-## Integration
+Progress callbacks, cancellation, operation timeouts and explicit memory bounds
+are part of the API. Writers publish completed output only after successful
+finalization; existing destinations are protected by default.
 
-Add these directories, relative to your checkout, to the Delphi unit search path:
+## Get started
+
+### 1. Install matching native libraries
+
+This repository contains source code. Download or build **FFmpeg 9.0.2 shared
+libraries** for your application's architecture and deploy them beside the
+executable. The [runtime guide](Runtime/README.md) lists the exact DLL versions,
+downloads and optional Win32 build recipes.
+
+The H.264 presets require `libx264`; Opus presets require `libopus`. PNG support
+requires a runtime built with zlib. Presets report missing capabilities explicitly.
+
+### 2. Add the Pascal units
+
+Add these directories to your project's unit search path:
 
 ```text
 Source
 Headers
 ```
 
-Add `Headers` to the include path. Rebuild all units when changing the binding or
-FFmpeg ABI version. Deploy the matching architecture's DLLs beside the executable.
-Audio wrappers require `avcodec-63.dll`, `avformat-63.dll`, `avutil-61.dll` and
-`swresample-7.dll`; other APIs need their additional libraries and dependencies.
+Also add `Headers` to the include path. Rebuild all units when changing the
+FFmpeg binding or ABI version.
 
-Start with:
+### 3. Inspect a file and save a screenshot
+
+```pascal
+program MediaQuickStart;
+
+{$APPTYPE CONSOLE}
+
+uses
+  TFFmpeg.Media,
+  TFFmpeg.Media.Types,
+  TFFmpeg.Media.Images;
+
+var
+  Info: TMediaInfo;
+  Screenshot: TMediaScreenshot;
+begin
+  Info:=TFFmpegMedia.ProbeFile('movie.mp4');
+  WriteLn('Container: ', Info.FormatName);
+  WriteLn('Streams: ', Length(Info.Streams));
+
+  Screenshot:=TFFmpegMedia.SaveScreenshot(
+    'movie.mp4', TMediaTime.FromSeconds(1.5), 'screenshot.png');
+  WriteLn('Selected frame: ', Screenshot.ActualTime.Seconds:0:3, ' s');
+end.
+```
+
+Screenshot extraction selects the first displayed frame at or after the requested
+time and reports the actual timestamp. Returned metadata and image buffers remain
+valid after the input closes.
+
+### Convert audio or video
+
+For MP3 to Ogg/Opus, the default preset produces 48 kHz stereo at 128 kbit/s:
 
 ```pascal
 uses
-  TFFmpeg.Input,
-  TFFmpeg.Decoder,
-  TFFmpeg.AudioResampler;
+  TFFmpeg.Media,
+  TFFmpeg.Media.Convert;
+
+var
+  Converted: TMediaConversionResult;
+begin
+  Converted:=TFFmpegMedia.ConvertAudio('music.mp3', 'music.opus');
+  WriteLn('Audio samples per channel: ', Converted.AudioSamples);
+end;
 ```
 
-[DecodeAudio.dpr](Examples/DecodeAudio.dpr) demonstrates the complete lifecycle:
-open input, open the selected decoder, configure resampling, read packets, send
-selected packets, receive decoded frames and convert them to PCM. At EOF, send a
-nil packet, receive remaining decoder output, then flush the resampler until empty.
-The example counts output bytes without opening an audio device.
+For coordinated audio/video conversion, choose the output size and preset:
 
-## Ownership and error handling
+```pascal
+uses
+  TFFmpeg.Media,
+  TFFmpeg.Media.Types,
+  TFFmpeg.Media.Convert;
 
-- Integer status results use FFmpeg's negative error codes. Check every result;
-  `TFFmpeg.Utils.FFmpegErrorText` produces a readable message.
-- Input objects own their format contexts. Stream and codec-parameter pointers
-  remain valid while the input is open. Decoder/encoder objects own their contexts.
-- Callers own packets, frames and option dictionaries. FFmpeg consumes recognized
-  options; free the remaining dictionary with `av_dict_free`.
-- Unreference packets and frames between uses, then free them at shutdown.
-- Resampler output is borrowed memory, valid until the next conversion, flush,
-  close or destruction. Copy it when longer ownership is needed.
-- High-level audio output is packed/interleaved. Planar output formats are rejected;
-  use the low-level resampling API when planar output is required.
-- Use separate instances per worker and stop workers before destroying objects.
-- `Decoder.Flush` sends an end-of-input packet. It is not a seeking/reset operation.
+var
+  Settings: TMediaAVConvertSettings;
+  Converted: TMediaConversionResult;
+begin
+  Settings:=TMediaAVConvertSettings.H264OpusMatroska(
+    1280, 720, TMediaRate.Create(30000, 1001));
+  Converted:=TFFmpegMedia.ConvertFile('input.mp4', 'output.mkv', Settings);
+  WriteLn('Video frames: ', Converted.VideoFrames);
+end;
+```
 
-`Input.OpenFile` treats its argument as a literal local filename using owned custom
-file I/O. It restricts I/O and demuxer access to the file protocol; callers can add
-`format_whitelist` restrictions. Its interrupt callback and opaque state are
-borrowed until close. `Input.Open` remains the general file/URL API.
+Video conversion preserves source timing by default. Set
+`Settings.VideoTiming:=mvpConstantRate` to request constant-rate output. Use
+`ConvertURL` for explicit HTTP/HTTPS input.
 
-## Encoding, scaling and still images
+## Examples
 
-For encoding, call `Allocate(codecID)`, configure `CodecContext`, then `Open`.
-A failed open frees the context; allocate again before retrying. Send frames and
-receive packets until EAGAIN. When sending returns EAGAIN, receive output and retry
-the same unconsumed frame. Send nil to start draining, retrying after output if
-necessary, then receive until EOF. Configure timestamps, frame sizes, padding and
-muxing in the application; do not modify a successfully opened context.
+Every high-level example is a complete console program using public units.
 
-`TFFmpegVideoScaler.Scale` borrows a software frame and returns a caller-owned
-frame. It bounds allocations to 64 million pixels and uses area scaling by default.
-Timing is retained; source color-space tags are not copied onto converted RGB data.
+| Example | What it demonstrates |
+| --- | --- |
+| [MediaInfo](Examples/MediaInfo.dpr) | Inspect container and stream information |
+| [ReadMedia](Examples/ReadMedia.dpr) | Read decoded audio/video with end, timeout and cancellation handling |
+| [ReadURL](Examples/ReadURL.dpr) | Read HTTP/HTTPS input with an operation timeout |
+| [GrabFrame](Examples/GrabFrame.dpr) | Save a screenshot as BMP, PNG or JPEG |
+| [WriteSamples](Examples/WriteSamples.dpr) | Generate and write raw PCM audio |
+| [ImagesToMP4](Examples/ImagesToMP4.dpr) | Turn still images into H.264 video with rational timing |
+| [ConvertAudio](Examples/ConvertAudio.dpr) | Convert audio with progress and cancellation |
+| [ConvertVideo](Examples/ConvertVideo.dpr) | Convert AV tracks with preserved timing or explicit CFR |
+| [ListDevices](Examples/ListDevices.dpr) | Enumerate cameras, microphones and their modes |
+| [CaptureDevice](Examples/CaptureDevice.dpr) | Consume live samples through bounded queues |
+| [RecordDevice](Examples/RecordDevice.dpr) | Record video, audio or both; finish gracefully or cancel |
 
-`TFFmpegStillImage.DecodeFile` accepts literal local BMP/PNG/JPEG files, rejects
-other demuxers and requires exactly one decoded frame. Returned frame storage is
-caller-owned. An optional native interrupt callback is borrowed during decoding.
-`EncodeBMP` scales and composites straight alpha onto an explicit RGB background,
-then encodes opaque 24-bit BMP bytes. EXIF orientation, ICC processing and file
-publication are outside these helpers.
+[DecodeAudio](Examples/DecodeAudio.dpr) demonstrates the lower-level wrappers
+when you need direct control over native decoding and resampling.
+
+### Camera and microphone recording
+
+Build the device examples, then inspect the current device list:
+
+```bash
+./build.sh Examples/ListDevices.dpr Win64
+./build.sh Examples/RecordDevice.dpr Win64
+./Bin/win64/ListDevices.exe --modes
+```
+
+Pass the listed video and audio indexes to `RecordDevice`. For example, **if** your
+camera is index `0` and microphone is index `2`:
+
+```bash
+./Bin/win64/RecordDevice.exe 0 2 10 recording.mkv
+```
+
+Use `-1` to disable a source: video-only recordings use H.264 MP4; audio-only
+recordings use Ogg/Opus. Optional `--stop-after-ms 5000` finalizes queued media;
+`--cancel-after-ms 5000` aborts without publishing output.
+
+Application code uses `TFFmpeg.Media.Devices` and `TFFmpeg.Media.Recording`.
+Importing the file-only facade does not add an `avdevice` dependency.
+
+## API essentials
+
+- **Start with defaults or a preset.** Use constructors such as
+  `TMediaReaderSettings.Default` and `TMediaWriterSettings.H264MP4`; a zeroed
+  settings record is not necessarily valid.
+- **Samples own their data.** Audio/video samples are immutable, reference-counted
+  interfaces. Retained samples survive subsequent reads, seeks and session closure.
+- **Time is explicit.** `TMediaTime` distinguishes known, unknown and estimated
+  timestamps; `TMediaRate` represents rational rates. Reader audio defaults to
+  interleaved S16 at 48 kHz stereo, and video to BGRA32.
+- **Finish output deliberately.** `IMediaWriter.Finish` drains encoders and publishes
+  the file. `Abort` or destruction discards unfinished output. Overwriting is opt-in.
+- **Handle read outcomes.** Readers distinguish samples, EOF, cancellation and
+  timeout. Other failures use `EFFmpegMediaError` with an operation, category and
+  optional native error code.
+- **Stop capture before releasing it.** `Stop` cancels native reads and joins the
+  worker. Preview can drop old video frames; recording reports queue overruns.
+  Recording presets use explicitly estimated audio sample-clock timing with
+  bounded native jitter and drift, while preserving variable video cadence.
+
+The public entry points live in [TFFmpeg.Media](Source/TFFmpeg.Media.pas).
+Reader, writer, image, conversion and device settings are declared in the
+corresponding `TFFmpeg.Media.*` units. `TFFmpeg.Media.Internal.*` units are
+implementation details.
+
+For native integration, the `TFFmpeg.Input`, `.Decoder`, `.Encoder`, `.Output`,
+`.AudioResampler`, `.VideoScaler` and `.StillImage` wrappers remain available.
+Their native pointers and ownership rules differ from the high-level interfaces;
+see the lower-level example before mixing APIs.
+
+## Compatibility
+
+| Target | Validation |
+| --- | --- |
+| **Delphi Win64** | Native tests and examples with compiler 36.0 and FFmpeg 9.0.2 |
+| **Delphi Win32** | Native tests and examples with compiler 36.0 and the matching Win32 runtime |
+| **FPC 3.2.2 / Linux** | Shared units and examples compile with `--no-link`; native Linux runtime support is not validated |
+| **DirectShow devices** | Physical Logitech C922 camera/microphone tested on both Windows targets, including recording, busy access, USB disconnect and repeated stop/reopen |
+
+The high-level capture backend requires Delphi on Windows. Device stop latency
+and timestamp behavior depend on the driver. There is no automatic reconnect or
+long-term clock-rate correction. H.264/AAC MP4 conversion rejects delayed audio
+starts that the current preset cannot preserve; H.264/Opus Matroska supports
+relative AV offsets. HDR tone mapping and hardware-accelerated decoding are outside
+the high-level API's current scope.
 
 ## Build and test
 
-From WSL with a licensed Delphi installation and matching runtimes installed:
+The build scripts run from **WSL** with a licensed Delphi installation. Place all
+seven matching DLLs in `Runtime/Win64/` or `Runtime/Win32/`; `build.sh` stages them
+beside the executable in `Bin/`.
 
 ```bash
-./build.sh Examples/DecodeAudio.dpr Win64
-./build.sh Tests/FFmpegSmoke.dpr Win64
-./Bin/win64/FFmpegSmoke.exe
-./build.sh Tests/EncoderSmoke.dpr Win64
-./Bin/win64/EncoderSmoke.exe
-./build.sh Tests/FFmpegAPISmoke.dpr Win64
-./Bin/win64/FFmpegAPISmoke.exe
-./build.sh Tests/VideoScalerSmoke.dpr Win64
-./Bin/win64/VideoScalerSmoke.exe
+./build.sh Examples/MediaInfo.dpr Win64
+./Bin/win64/MediaInfo.exe 'C:\Media\movie.mp4'
+
+./build.sh Examples/MediaInfo.dpr Win32
+./Bin/win32/MediaInfo.exe 'C:\Media\movie.mp4'
 ```
 
-Use `Win32` for a 32-bit target. `build.sh` copies the seven runtime DLLs from
-`Runtime/Win64` or `Runtime/Win32` to the output directory. These directories are
-ignored by Git and are not included in a clone.
+Arguments passed to Windows executables must use Windows-compatible paths.
+`BDS_DIR` selects the RAD Studio installation using a WSL path; `BDS_VERSION`
+defaults to `23.0`. Individual overrides are `DCC32`, `DCC64`,
+`DELPHI_LIB_WIN32` and `DELPHI_LIB_WIN64`. You can also build the `.dpr` examples
+in the Delphi IDE using the search paths above.
 
-`BDS_DIR` selects the RAD Studio installation using a WSL path. Otherwise,
-`BDS_VERSION` selects a version under the standard Windows installation directory
-(default `23.0`). `DCC32`, `DCC64`, `DELPHI_LIB_WIN32` and `DELPHI_LIB_WIN64` override
-individual compiler/library paths. The scripts only build this repository.
-
-For FPC syntax/unit checks without native Linux FFmpeg libraries:
+Run the media test suite and compile the examples:
 
 ```bash
-./build-fpc.sh Examples/DecodeAudio.dpr --no-link
-./build-fpc.sh Tests/FFmpegSmoke.dpr --no-link
+./Tools/validate-media.sh Win64
+./Tools/validate-media.sh Win32
+./Tools/validate-media.sh fpc
 ```
 
-Omit `--no-link` when compatible FFmpeg libraries and linker dependencies are
-installed. A no-link build does not validate the native Linux ABI or playback.
+The full suite needs Python 3, `flock`, OpenSSL and an FFmpeg CLI with the encoders
+used by the [synthetic fixtures](Tests/Fixtures/README.md). Fixture hashes are
+pinned to FFmpeg CLI 8.1.3, independently of the 9.0.2 library runtime under test.
+Runs serialize access to shared fixtures. Tests cover timing, ownership, decoding,
+encoding, publication, cancellation, HTTP/HTTPS and resource growth; physical
+capture tests are opt-in and require selected devices.
 
-The tests cover input failure/reopen, decoding/draining, non-silent resampling,
-encoder backpressure and lifecycle, native library versions, codec IDs, filters,
-program copying, known pixel values, scaling ownership/bounds and BMP layout/alpha
-compositing. They do not certify every codec, device or hardware-acceleration path.
+For a standalone FPC compilation check without generating fixtures:
 
-See [migration and ABI validation](MIGRATION-9.0.2.md) for changes from 8.1.
-The historical `libavfilter_formats` and `libavformat_url` units describe internal
-APIs not exported by standard shared builds; use the corresponding public APIs.
+```bash
+./build-fpc.sh Examples/MediaInfo.dpr --no-link
+```
 
-## Licensing
+For a quick source check:
 
-The wrapper license is [BSD 2-Clause](LICENSE). Header files retain their original
-copyright and license notices. FFmpeg runtime licensing is separate and depends on
-the chosen build; see [third-party notices](THIRD_PARTY_NOTICES.md).
+```bash
+python3 Tools/test_media_tools.py
+./Tools/check-code-style.sh
+python3 Tools/check-media-boundary.py Tests/MediaContractCompile.dpr
+```
+
+See [migration and ABI validation](MIGRATION-9.0.2.md) for native header/export
+checks and guidance when moving from FFmpeg 8.1.
+
+## Repository layout
+
+```text
+Headers/     FFmpeg Pascal declarations
+Source/      High-level media API and native wrappers
+Examples/    Console programs for common workflows
+Tests/       Smoke tests, hardware tests and synthetic fixture generators
+Tools/       Validation tools and native runtime build scripts
+Runtime/     Native library setup instructions
+```
+
+Native binaries, generated fixtures, build outputs and local development notes
+are excluded from Git.
+
+## License
+
+The wrapper code is licensed under [BSD 2-Clause](LICENSE). Translated headers
+retain their original notices. FFmpeg and optional codec libraries have separate
+licenses determined by the runtime build; see [third-party notices](THIRD_PARTY_NOTICES.md)
+and the [runtime guide](Runtime/README.md).

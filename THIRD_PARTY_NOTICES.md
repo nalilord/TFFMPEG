@@ -14,7 +14,13 @@ Original translation source: [DelphiFFmpeg.com](http://www.delphiffmpeg.com).
 The library interfaces with FFmpeg. FFmpeg binaries are not distributed in this
 repository. Their applicable license and dependencies depend on the selected
 build. The documented Win64 reference package is GPL v3; the documented Win32
-configuration is LGPL v2.1 or later without external codec libraries.
+default configuration is LGPL v2.1 or later without external codec libraries. The optional
+PNG-enabled Win32 build statically links zlib 1.3.2 under its separate zlib license;
+retain the upstream zlib LICENSE when distributing that runtime.
+The optional Win32 H.264/Opus variant also statically links x264 core 164
+(GPL v2 or later) and Opus 1.5.2 (BSD-style license and its additional notices),
+making that FFmpeg build GPL v2 or later. Retain their COPYING and source materials.
+The source-only wrapper remains under its own license.
 
 [Runtime setup](Runtime/README.md) provides version requirements, source/toolchain
 links and the Win32 build recipe. Retain upstream license and source materials

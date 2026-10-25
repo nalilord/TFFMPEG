@@ -32,8 +32,7 @@ type
     constructor Create;
     destructor Destroy; override;
 
-    function OpenFromCodec(CodecContext: PAVCodecContext; OutputSampleRate, OutputChannels: Integer;
-      OutputSampleFormat: TAVSampleFormat): Integer;
+    function OpenFromCodec(CodecContext: PAVCodecContext; OutputSampleRate, OutputChannels: Integer; OutputSampleFormat: TAVSampleFormat): Integer;
     procedure Close;
     function ConvertFrame(Frame: PAVFrame; out Buffer: PByte; out ByteCount: Integer): Integer;
     function Flush(out Buffer: PByte; out ByteCount: Integer): Integer;
@@ -58,38 +57,40 @@ var
   OutBytes: Integer;
   OutSamples: Integer;
 begin
-  Buffer := nil;
-  ByteCount := 0;
-  if not Assigned(FSwrContext) or not Assigned(Frame) then
+  Buffer:=nil;
+  ByteCount:=0;
+
+  if NOT Assigned(FSwrContext) OR NOT Assigned(Frame) then
     Exit(AVERROR_EINVAL);
 
-  OutSamples := TFFmpegResampleApi.GetOutSamples(FSwrContext, Frame^.nb_samples);
+  OutSamples:=TFFmpegResampleApi.GetOutSamples(FSwrContext, Frame^.nb_samples);
   if OutSamples < 0 then
     Exit(OutSamples);
-  OutBytes := TFFmpegResampleApi.GetBufferSize(FOutputChannels, OutSamples, FOutputSampleFormat);
+
+  OutBytes:=TFFmpegResampleApi.GetBufferSize(FOutputChannels, OutSamples, FOutputSampleFormat);
   if OutBytes < 0 then
     Exit(OutBytes);
 
   EnsureBufferCapacity(OutBytes);
-  Result := TFFmpegResampleApi.Convert(FSwrContext, @FBuffer, OutSamples,
-    Frame^.extended_data, Frame^.nb_samples);
+  Result:=TFFmpegResampleApi.Convert(FSwrContext, @FBuffer, OutSamples, Frame^.extended_data, Frame^.nb_samples);
   if Result <= 0 then
     Exit;
 
-  ByteCount := TFFmpegResampleApi.GetBufferSize(FOutputChannels, Result, FOutputSampleFormat);
+  ByteCount:=TFFmpegResampleApi.GetBufferSize(FOutputChannels, Result, FOutputSampleFormat);
   if ByteCount < 0 then
   begin
-    Result := ByteCount;
-    ByteCount := 0;
+    Result:=ByteCount;
+    ByteCount:=0;
     Exit;
   end;
-  Buffer := FBuffer;
+
+  Buffer:=FBuffer;
 end;
 
 constructor TFFmpegAudioResampler.Create;
 begin
   inherited Create;
-  FOutputSampleFormat := AV_SAMPLE_FMT_S16;
+  FOutputSampleFormat:=AV_SAMPLE_FMT_S16;
 end;
 
 destructor TFFmpegAudioResampler.Destroy;
@@ -105,8 +106,7 @@ end;
 
 function TFFmpegAudioResampler.BytesPerSecond: Integer;
 begin
-  Result := FOutputSampleRate * FOutputChannels *
-    TFFmpegResampleApi.BytesPerSample(FOutputSampleFormat);
+  Result:=FOutputSampleRate * FOutputChannels * TFFmpegResampleApi.BytesPerSample(FOutputSampleFormat);
 end;
 
 function TFFmpegAudioResampler.Flush(out Buffer: PByte; out ByteCount: Integer): Integer;
@@ -114,31 +114,34 @@ var
   OutSamples: Integer;
   OutBytes: Integer;
 begin
-  Buffer := nil;
-  ByteCount := 0;
-  if not Assigned(FSwrContext) then
+  Buffer:=nil;
+  ByteCount:=0;
+
+  if NOT Assigned(FSwrContext) then
     Exit(AVERROR_EINVAL);
 
-  OutSamples := TFFmpegResampleApi.GetOutSamples(FSwrContext, 0);
+  OutSamples:=TFFmpegResampleApi.GetOutSamples(FSwrContext, 0);
   if OutSamples <= 0 then
     Exit(OutSamples);
-  OutBytes := TFFmpegResampleApi.GetBufferSize(FOutputChannels, OutSamples, FOutputSampleFormat);
+
+  OutBytes:=TFFmpegResampleApi.GetBufferSize(FOutputChannels, OutSamples, FOutputSampleFormat);
   if OutBytes < 0 then
     Exit(OutBytes);
-  EnsureBufferCapacity(OutBytes);
 
-  Result := TFFmpegResampleApi.Flush(FSwrContext, @FBuffer, OutSamples);
+  EnsureBufferCapacity(OutBytes);
+  Result:=TFFmpegResampleApi.Flush(FSwrContext, @FBuffer, OutSamples);
   if Result <= 0 then
     Exit;
 
-  ByteCount := TFFmpegResampleApi.GetBufferSize(FOutputChannels, Result, FOutputSampleFormat);
+  ByteCount:=TFFmpegResampleApi.GetBufferSize(FOutputChannels, Result, FOutputSampleFormat);
   if ByteCount < 0 then
   begin
-    Result := ByteCount;
-    ByteCount := 0;
+    Result:=ByteCount;
+    ByteCount:=0;
     Exit;
   end;
-  Buffer := FBuffer;
+
+  Buffer:=FBuffer;
 end;
 
 function TFFmpegAudioResampler.OpenFromCodec(CodecContext: PAVCodecContext; OutputSampleRate, OutputChannels: Integer;
@@ -147,29 +150,27 @@ begin
   Close;
 
   { This wrapper returns one interleaved buffer, not an array of planes. }
-  if not Assigned(CodecContext) or (OutputSampleRate <= 0) or (OutputChannels <= 0) or
-    (av_sample_fmt_is_planar(OutputSampleFormat) <> 0) or
+  if NOT Assigned(CodecContext) OR (OutputSampleRate <= 0) OR (OutputChannels <= 0) OR (av_sample_fmt_is_planar(OutputSampleFormat) <> 0) OR
     (TFFmpegResampleApi.BytesPerSample(OutputSampleFormat) <= 0) then
     Exit(AVERROR_EINVAL);
 
-  FOutputSampleRate := OutputSampleRate;
-  FOutputChannels := OutputChannels;
-  FOutputSampleFormat := OutputSampleFormat;
+  FOutputSampleRate:=OutputSampleRate;
+  FOutputChannels:=OutputChannels;
+  FOutputSampleFormat:=OutputSampleFormat;
   TFFmpegResampleApi.DefaultChannelLayout(FOutputLayout, OutputChannels);
 
-  FSwrContext := TFFmpegResampleApi.AllocContext;
-  if not Assigned(FSwrContext) then
+  FSwrContext:=TFFmpegResampleApi.AllocContext;
+  if NOT Assigned(FSwrContext) then
     Exit(AVERROR_ENOMEM);
 
-  Result := TFFmpegResampleApi.ConfigureFromCodecContext(FSwrContext, CodecContext,
-    FOutputLayout, OutputSampleRate, FOutputSampleFormat);
+  Result:=TFFmpegResampleApi.ConfigureFromCodecContext(FSwrContext, CodecContext, FOutputLayout, OutputSampleRate, FOutputSampleFormat);
   if Result < 0 then
   begin
     Close;
     Exit;
   end;
 
-  Result := TFFmpegResampleApi.Init(FSwrContext);
+  Result:=TFFmpegResampleApi.Init(FSwrContext);
   if Result < 0 then
     Close;
 end;

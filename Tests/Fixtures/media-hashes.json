@@ -1,0 +1,9 @@
+{
+  "generator": "ffmpeg version 8.1.3 Copyright (c) 2000-2026 the FFmpeg developers",
+  "sha256": {
+    "video.mkv": "8814e3de3ae2fd39a54e01104c4631419cac09450647b514579eef668bfcf02e",
+    "multi.mkv": "0dd987f7f3c564f172f68ce009c263dc0a1a201c558550dcac00904876b42e00",
+    "cover.mp3": "95dd47ee05f9642c1c322a3fb85b0acb9589b42d2fb97fe84ea912cf1ae72bf0",
+    "rotated.mp4": "ff326389817e3c6c01414d57f24d9504f68dad05658f84fa592f9361bd435ba5"
+  }
+}

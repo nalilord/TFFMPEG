@@ -26,7 +26,7 @@ begin
     raise Exception.Create(FFmpegErrorText(Code));
 end;
 
-procedure Decode(const URL: string);
+procedure Decode(const URL: String);
 var
   Input: TFFmpegInput;
   Decoder: TFFmpegDecoder;
@@ -44,10 +44,11 @@ var
   begin
     while True do
     begin
-      ReceiveCode := Decoder.ReceiveFrame(Frame);
-      if (ReceiveCode = AVERROR_EAGAIN) or (ReceiveCode = AVERROR_EOF) then
+      ReceiveCode:=Decoder.ReceiveFrame(Frame);
+      if (ReceiveCode = AVERROR_EAGAIN) OR (ReceiveCode = AVERROR_EOF) then
         Break;
       Check(ReceiveCode);
+
       try
         Check(Resampler.ConvertFrame(Frame, Buffer, ByteCount));
         Inc(Frames);
@@ -61,31 +62,36 @@ var
   end;
 
 begin
-  Input := nil;
-  Decoder := nil;
-  Resampler := nil;
-  Packet := nil;
-  Frame := nil;
-  Options := nil;
+  Input:=nil;
+  Decoder:=nil;
+  Resampler:=nil;
+  Packet:=nil;
+  Frame:=nil;
+  Options:=nil;
+
   try
-    Input := TFFmpegInput.Create;
-    Decoder := TFFmpegDecoder.Create;
-    Resampler := TFFmpegAudioResampler.Create;
-    Packet := TFFmpegApi.AllocPacket;
-    Frame := TFFmpegApi.AllocFrame;
-    if (Packet = nil) or (Frame = nil) then
+    Input:=TFFmpegInput.Create;
+    Decoder:=TFFmpegDecoder.Create;
+    Resampler:=TFFmpegAudioResampler.Create;
+    Packet:=TFFmpegApi.AllocPacket;
+    Frame:=TFFmpegApi.AllocFrame;
+    if (Packet = nil) OR (Frame = nil) then
       raise Exception.Create('Could not allocate packet/frame');
+
     Check(Input.Open(URL, Options));
     Check(Decoder.Open(Input.Codec, Input.CodecParameters));
     Check(Resampler.OpenFromCodec(Decoder.CodecContext, 48000, 2, AV_SAMPLE_FMT_S16));
-    Frames := 0;
-    PCMBytes := 0;
+
+    Frames:=0;
+    PCMBytes:=0;
+
     while True do
     begin
-      Code := Input.ReadPacket(Packet);
+      Code:=Input.ReadPacket(Packet);
       if Code = AVERROR_EOF then
         Break;
       Check(Code);
+
       try
         if Packet^.stream_index = Input.StreamIndex then
         begin
@@ -96,15 +102,18 @@ begin
         TFFmpegApi.UnrefPacket(Packet);
       end;
     end;
+
     Check(Decoder.SendPacket(nil));
     ReceiveFrames;
+
     repeat
       Check(Resampler.Flush(Buffer, ByteCount));
       Inc(PCMBytes, ByteCount);
     until ByteCount = 0;
+
     WriteLn('Decoded frames: ', Frames);
     WriteLn('PCM bytes (48 kHz, stereo, signed 16-bit): ', PCMBytes);
-    if (Frames = 0) or (PCMBytes = 0) then
+    if (Frames = 0) OR (PCMBytes = 0) then
       raise Exception.Create('No audio decoded');
   finally
     av_dict_free(@Options);
@@ -120,12 +129,13 @@ begin
   try
     if ParamCount <> 1 then
       raise Exception.Create('Usage: DecodeAudio <audio file or URL>');
+
     Decode(ParamStr(1));
   except
     on E: Exception do
     begin
       WriteLn(E.ClassName, ': ', E.Message);
-      ExitCode := 1;
+      ExitCode:=1;
     end;
   end;
 end.
